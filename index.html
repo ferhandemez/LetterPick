@@ -1,0 +1,1868 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Letter Pick</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #070b16;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  canvas {
+    display: block;
+    touch-action: none;
+    border-radius: 18px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  let ctx = canvas.getContext('2d');
+
+  const W = 405, H = 720;
+  const FONT = '"Fredoka", ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+  const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+    canvas.style.width = W * scale + 'px';
+    canvas.style.height = H * scale + 'px';
+    canvas.width = Math.round(W * scale * dpr);
+    canvas.height = Math.round(H * scale * dpr);
+    ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const ICON_OF = {
+    CAT: '🐱', SUN: '☀️', BOOK: '📖', KEY: '🔑', DOG: '🐶', STAR: '⭐', CAR: '🚗', FISH: '🐟', MOON: '🌙', BIKE: '🚲', GIFT: '🎁',
+    TREE: '🌳', FROG: '🐸', HAT: '🎩', APPLE: '🍎', BEE: '🐝', CUP: '☕', BALL: '⚽', PIG: '🐷', DRUM: '🥁', CAKE: '🎂', EGG: '🥚', LEAF: '🍃',
+    BANANA: '🍌', ROBOT: '🤖', SNAIL: '🐌', GUITAR: '🎸', PANDA: '🐼', LEMON: '🍋', ROCKET: '🚀', HORSE: '🐴', ZEBRA: '🦓',
+    PENGUIN: '🐧', KOALA: '🐨', WHALE: '🐳', TIGER: '🐯', CHERRY: '🍒', OWL: '🦉', MONKEY: '🐵', CARROT: '🥕', BUS: '🚌', TOMATO: '🍅', SHIP: '🚢', CORN: '🌽',
+    DRAGON: '🐉', CACTUS: '🌵', PARROT: '🦜', CANDLE: '🕯️', TURTLE: '🐢', ANCHOR: '⚓', RABBIT: '🐇', PEPPER: '🌶️', CASTLE: '🏰', VIOLIN: '🎻',
+    BED: '🛏️', BOX: '📦', PEN: '🖊️', BELL: '🔔', DUCK: '🦆', RING: '💍', LION: '🦁', BOAT: '⛵',
+    GHOST: '👻', CLOUD: '☁️', PIANO: '🎹', SHARK: '🦈', CAMERA: '📷', DONUT: '🍩', GRAPES: '🍇',
+    MAGNET: '🧲', COOKIE: '🍪', SPIDER: '🕷️', RAINBOW: '🌈', UNICORN: '🦄',
+    BEAR: '🐻', GOAT: '🐐', TENT: '⛺', ROSE: '🌹', SHOE: '👟', TRAIN: '🚆', CROWN: '👑', PLANE: '✈️', CANOE: '🛶',
+  };
+
+  // ---------- Levels ----------
+  // Each tower is generated from every letter of the level's words, so clearing all tiles always
+  // empties it. columns = board columns, one word queue per column. blocks = 3×2 word blocks in the
+  // tower: their letters are taken out of the stones, and `at` is how far up the tower (0–1) they sit.
+  // hidden = board words shown as "?" (no icon, no letter count) until they reach the front row.
+  const LEVELS = [
+    {
+      name: 'LEVEL 1', seed: 10, towerCols: 6, mix: 28,
+      columns: [
+        ['CAT', 'SUN', 'BOOK', 'KEY', 'BED'],
+        ['DOG', 'STAR', 'CAR', 'FISH', 'BOX'],
+        ['MOON', 'BIKE', 'GIFT', 'PEN', 'BELL'],
+      ],
+    },
+    {
+      name: 'LEVEL 2', seed: 16, towerCols: 7, mix: 36,
+      blocks: [{ word: 'GOAT', at: 0.3 }],
+      columns: [
+        ['TREE', 'FROG', 'HAT', 'DUCK'],
+        ['APPLE', 'BEE', 'CUP', 'RING'],
+        ['BALL', 'PIG', 'DRUM', 'LION'],
+        ['CAKE', 'EGG', 'LEAF', 'BOAT'],
+      ],
+    },
+    {
+      name: 'LEVEL 3', seed: 21, towerCols: 6, mix: 40,
+      blocks: [{ word: 'TENT', at: 0.25 }, { word: 'ROSE', at: 0.6 }],
+      columns: [
+        ['BANANA', 'ROBOT', 'SNAIL', 'GHOST'],
+        ['GUITAR', 'PANDA', 'LEMON', 'CLOUD'],
+        ['ROCKET', 'HORSE', 'ZEBRA', 'PIANO'],
+      ],
+    },
+    {
+      name: 'LEVEL 4', seed: 7, towerCols: 8, mix: 48,
+      blocks: [{ word: 'SHOE', at: 0.25 }, { word: 'TRAIN', at: 0.6 }],
+      hidden: ['KOALA', 'OWL', 'SHIP'],
+      columns: [
+        ['PENGUIN', 'KOALA', 'WHALE', 'SHARK'],
+        ['TIGER', 'CHERRY', 'OWL', 'CAMERA'],
+        ['MONKEY', 'CARROT', 'BUS', 'DONUT'],
+        ['TOMATO', 'SHIP', 'CORN', 'GRAPES'],
+      ],
+    },
+    {
+      name: 'LEVEL 5', seed: 5, towerCols: 8, mix: 40,
+      blocks: [{ word: 'CROWN', at: 0.2 }, { word: 'PLANE', at: 0.5 }, { word: 'CANOE', at: 0.75 }],
+      hidden: ['CANDLE', 'SPIDER', 'VIOLIN'],
+      columns: [
+        ['DRAGON', 'CACTUS', 'MAGNET'],
+        ['PARROT', 'CANDLE', 'COOKIE'],
+        ['TURTLE', 'ANCHOR', 'SPIDER'],
+        ['RABBIT', 'PEPPER', 'RAINBOW'],
+        ['CASTLE', 'VIOLIN', 'UNICORN'],
+      ],
+    },
+  ];
+
+  const STONE_COLORS = { top: '#ffe28f', bottom: '#ffc94d', depth: '#c98a1c', text: '#6b3f0c' };
+
+  // ---------- Layout ----------
+  const GRID_GAP = 12, GRID_TOP = 514, ICON_DEPTH = 7;
+  const FRONT_ROW = 0, BACK_ROW = 2;
+  const rowTop = (row) => GRID_TOP + row * (TILE + GRID_GAP);
+  const gridX = (col) => GRID_X0 + col * (TILE + GRID_GAP);
+
+  const TITLE_Y = 30;
+
+  const STONE = 36, STONE_STEP = 38, TCOL_GAP = 8;
+  const TOWER_BOTTOM = 326;
+  const TOWER_DIM = 0.38;
+  const colX = (c) => TOWER_X0 + STONE / 2 + c * (STONE + TCOL_GAP);
+  const stoneY = (i) => TOWER_BOTTOM - i * STONE_STEP;
+
+  // Word blocks span 3 tower columns × 2 rows.
+  const BLOCK_W = 3 * STONE + 2 * TCOL_GAP, BLOCK_H = STONE_STEP + STONE, BLOCK_D = 5;
+  const BLOCK_HOLD = 220, BLOCK_CLEAR = 450;
+  const STONE_DEPTH = Math.max(3, Math.round(STONE * 0.1));
+  const BLOCK_FACE_H = BLOCK_H - BLOCK_D;
+
+  // Stones above this many rows stay hidden above the title bar until the column shrinks.
+  const TOWER_VISIBLE_ROWS = 8;
+  const TOWER_FADE_Y0 = 40, TOWER_FADE_Y1 = 88;
+
+  const SLOT_COLS = 6, SLOT_ROWS = 2, SLOT_COUNT = SLOT_COLS * SLOT_ROWS;
+  const SLOT = 36, SLOT_GAP = 6, SLOT_Y = 400;
+  const SLOTS_W = SLOT_COLS * SLOT + (SLOT_COLS - 1) * SLOT_GAP;
+  const SLOTS_H = SLOT_ROWS * SLOT + (SLOT_ROWS - 1) * SLOT_GAP;
+  const SLOTS_X0 = (W - SLOTS_W) / 2;
+
+  // Per-level layout, set by applyLevel().
+  let levelIdx = 0, LEVEL, TOTAL_TILES, GRID_COLS, TILE, GRID_X0;
+  let TCOLS, TOWER_W, TOWER_X0, TOWER_LAYOUT, TOWER_ROWS;
+  const slotX = (i) => SLOTS_X0 + SLOT / 2 + (i % SLOT_COLS) * (SLOT + SLOT_GAP);
+  const slotY = (i) => SLOT_Y + Math.floor(i / SLOT_COLS) * (SLOT + SLOT_GAP);
+
+  const TS = 40, GAP = 5, AIR_SCALE = 1.1, AIR_ELEV = 14, AIR_Y = 492;
+
+  // Timing (ms)
+  const STAGGER = 40, POP = 200, HOLD = 40, FLY_STAGGER = 45, FLY = 250;
+  const BREAK_HOLD = 30, BREAK_SHRINK = 100;
+
+  // ---------- Easing ----------
+  const clamp01 = (t) => Math.max(0, Math.min(1, t));
+  const easeOutBack = (t) => { const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * (t - 1) ** 3 + c1 * (t - 1) ** 2; };
+  const easeInOutCubic = (t) => t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const rowX = (n, size, gap, i) => W / 2 - (n * size + (n - 1) * gap) / 2 + size / 2 + i * (size + gap);
+
+  function mulberry32(a) {
+    return () => {
+      a = (a + 0x6d2b79f5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // Lays the letters into the tower bottom-up in the order one random playthrough reveals them,
+  // spreading across the shortest columns. Each letter is then nudged up to LEVEL.mix positions
+  // out of that order, so letters have to wait in slots but that playthrough stays winnable.
+  // A word block takes its letters from the ones revealed right after the stones beneath it.
+  // Columns hold letters (strings) and block objects; a block appears once in each of its 3 columns.
+  function buildTowerLayout() {
+    const rnd = mulberry32(LEVEL.seed);
+    const next = LEVEL.columns.map(() => 0);
+    const seq = [];
+    for (;;) {
+      const open = LEVEL.columns.map((c, i) => (next[i] < c.length ? i : -1)).filter((i) => i >= 0);
+      if (!open.length) break;
+      const c = open[(rnd() * open.length) | 0];
+      seq.push(...LEVEL.columns[c][next[c]++]);
+    }
+    const queue = seq.map((ch, i) => ({ ch, k: i + rnd() * LEVEL.mix })).sort((a, b) => a.k - b.k).map((o) => o.ch);
+    const plan = (LEVEL.blocks || []).slice().sort((a, b) => a.at - b.at);
+    const stoneCount = queue.length - plan.reduce((s, b) => s + b.word.length, 0);
+    const cols = Array.from({ length: TCOLS }, () => []);
+    const heights = cols.map(() => 0);
+    const put = (c, ch) => { cols[c].push(ch); heights[c]++; placed++; };
+    let placed = 0;
+    while (queue.length || plan.length) {
+      if (plan.length && (placed >= plan[0].at * stoneCount || !queue.length)) {
+        const { word } = plan.shift();
+        for (const ch of word) {
+          const k = queue.indexOf(ch);
+          if (k < 0) throw new Error(`${LEVEL.name}: no "${ch}" left for block ${word}`);
+          queue.splice(k, 1);
+        }
+        const c0 = (rnd() * (TCOLS - 2)) | 0;
+        const h = Math.max(heights[c0], heights[c0 + 1], heights[c0 + 2]);
+        for (let c = c0; c < c0 + 3; c++) while (heights[c] < h) put(c, queue.shift());
+        const block = { kind: 'block', word, col: c0 };
+        for (let c = c0; c < c0 + 3; c++) { cols[c].push(block); heights[c] = h + 2; }
+        continue;
+      }
+      const minH = Math.min(...heights);
+      const cand = heights.map((h, i) => (h === minH ? i : -1)).filter((i) => i >= 0);
+      put(cand[(rnd() * cand.length) | 0], queue.shift());
+    }
+    TOWER_ROWS = Math.max(...heights);
+    return cols;
+  }
+
+  // Plays letters out against a tower model and slot contents: columns hold letters and shared
+  // { kind: 'block', col, need } objects. A letter fills a block at the bottom first, else breaks a
+  // matching bottom stone, else takes a slot. Returns true if the game ends stuck. Mutates its inputs.
+  function settle(cols, slotted, waiting) {
+    const take = (ch) => {
+      for (const col of cols) {
+        const b = col[0];
+        if (!b || typeof b === 'string') continue;
+        const k = b.need.indexOf(ch);
+        if (k < 0 || ![0, 1, 2].every((d) => cols[b.col + d][0] === b)) continue;
+        b.need.splice(k, 1);
+        if (!b.need.length) for (let d = 0; d < 3; d++) cols[b.col + d].shift();
+        return true;
+      }
+      const col = cols.find((c) => c[0] === ch);
+      if (col) col.shift();
+      return !!col;
+    };
+    for (let progress = true; progress;) {
+      progress = false;
+      for (let i = 0; i < slotted.length; i++) {
+        if (take(slotted[i])) { slotted.splice(i--, 1); progress = true; }
+      }
+      if (waiting.length && (take(waiting[0]) || (slotted.length < SLOT_COUNT && slotted.push(waiting[0])))) {
+        waiting.shift();
+        progress = true;
+      }
+    }
+    return waiting.length > 0 || slotted.length >= SLOT_COUNT;
+  }
+
+  function applyLevel(idx) {
+    levelIdx = idx;
+    LEVEL = LEVELS[idx];
+    TOTAL_TILES = LEVEL.columns.reduce((s, c) => s + c.length, 0);
+
+    GRID_COLS = LEVEL.columns.length;
+    TILE = Math.min(86, (W - 40 - GRID_GAP * (GRID_COLS - 1)) / GRID_COLS);
+    GRID_X0 = (W - (GRID_COLS * TILE + (GRID_COLS - 1) * GRID_GAP)) / 2;
+
+    TCOLS = LEVEL.towerCols;
+    TOWER_W = TCOLS * STONE + (TCOLS - 1) * TCOL_GAP;
+    TOWER_X0 = (W - TOWER_W) / 2;
+    TOWER_LAYOUT = buildTowerLayout();
+  }
+  applyLevel(0);
+
+  // ---------- State ----------
+  let tiles = [], vanishing = [];
+  let colNext = [];
+  let tilesLeft = TOTAL_TILES;
+  let tower = [], blocks = [];
+  let slots = [];
+  let letters = [];
+  let particles = [], confetti = [], rings = [], glows = [];
+  let pointer = { x: -1, y: -1 };
+
+  // ---------- Icon tiles ----------
+  function makeTile(col, row, now, delay) {
+    const word = LEVEL.columns[col][colNext[col]];
+    if (!word) return null;
+    colNext[col]++;
+    const t = {
+      word, icon: ICON_OF[word],
+      col, row,
+      x: gridX(col),
+      y: rowTop(row) + 22,
+      w: TILE, h: TILE,
+      spawnT: now + delay,
+      hover: 0, denyT: -1e9,
+      hidden: row !== FRONT_ROW && (LEVEL.hidden || []).includes(word), revealT: null,
+    };
+    tiles.push(t);
+    return t;
+  }
+
+  const REVEAL = 360;
+  function revealTile(t, now) {
+    t.revealT = now;
+    sfxReveal();
+    sparkle(t.x + t.w / 2, rowTop(FRONT_ROW) + t.h / 2);
+  }
+
+  // Horizontal flip while a hidden tile turns over; shows "?" until the flip's midpoint.
+  function revealView(t, now) {
+    if (!t.hidden) return { sx: 1, hidden: false };
+    if (t.revealT === null) return { sx: 1, hidden: true };
+    const p = clamp01((now - t.revealT) / REVEAL);
+    return { sx: Math.max(0.02, Math.abs(Math.cos(p * Math.PI))), hidden: p < 0.5 };
+  }
+
+  function initTiles(now) {
+    tiles = [];
+    vanishing = [];
+    colNext = LEVEL.columns.map(() => 0);
+    tilesLeft = TOTAL_TILES;
+    for (let row = 0; row < 3; row++)
+      for (let col = 0; col < GRID_COLS; col++) makeTile(col, row, now, (row * GRID_COLS + col) * 50);
+  }
+
+  function consumeTile(t, now) {
+    tiles = tiles.filter((o) => o !== t);
+    vanishing.push({ ...t, vanishT: now });
+    for (const o of tiles) {
+      if (o.col !== t.col) continue;
+      o.row--;
+      if (o.row === FRONT_ROW && o.hidden && o.revealT === null) revealTile(o, now);
+    }
+    makeTile(t.col, BACK_ROW, now, 60);
+    tilesLeft--;
+  }
+
+  function updateTiles(dt) {
+    const k = 1 - Math.exp(-dt * 24);
+    for (const t of tiles) t.y += (rowTop(t.row) - t.y) * k;
+  }
+
+  // ---------- Tower ----------
+  // Stones are { kind: 'stone', c, ... }; a block object sits in all 3 of its columns.
+  // An item's y is the centre of its lowest row; a block's lower row rests on its tallest column.
+  function initTower() {
+    blocks = [];
+    const made = new Map();
+    tower = TOWER_LAYOUT.map((col, c) => col.map((it) => {
+      if (typeof it === 'string') {
+        return { kind: 'stone', ch: it, c, x: colX(c), y: 0, vy: 0, row: 0, reserved: false, breakT: null, landT: -1e9, dim: TOWER_DIM };
+      }
+      if (!made.has(it)) {
+        const none = [...it.word].map(() => false);
+        const b = {
+          kind: 'block', word: it.word, icon: ICON_OF[it.word], col: it.col, x: colX(it.col + 1), y: 0, vy: 0, row: 0,
+          landT: -1e9, dim: TOWER_DIM, filled: [...none], reserved: [...none], fillT: none.map(() => -1e9), doneT: null,
+        };
+        made.set(it, b);
+        blocks.push(b);
+      }
+      return made.get(it);
+    }));
+    computeRows();
+    for (const it of towerItems()) {
+      const c = it.kind === 'block' ? it.col + 1 : it.c;
+      it.y = stoneY(it.row) - 260 - it.row * 16 - c * 25;
+    }
+  }
+
+  const towerItems = () => [...blocks, ...tower.flat().filter((it) => it.kind === 'stone')];
+  const blockAtBottom = (b) => b.row === 0 && b.doneT === null && b.vy === 0 && b.y === stoneY(0);
+
+  function computeRows() {
+    const idx = tower.map(() => 0), cur = tower.map(() => 0);
+    for (let progress = true; progress;) {
+      progress = false;
+      tower.forEach((col, c) => {
+        while (idx[c] < col.length) {
+          const it = col[idx[c]];
+          if (it.kind === 'stone') { it.row = cur[c]++; idx[c]++; progress = true; continue; }
+          const span = [it.col, it.col + 1, it.col + 2];
+          if (!span.every((k) => tower[k][idx[k]] === it)) break;
+          it.row = Math.max(...span.map((k) => cur[k]));
+          for (const k of span) { cur[k] = it.row + 2; idx[k]++; }
+          progress = true;
+        }
+      });
+    }
+  }
+
+  function updateTower(now, dt) {
+    for (const col of tower) {
+      if (col[0] && col[0].kind === 'stone' && col[0].breakT !== null && now - col[0].breakT >= BREAK_HOLD + BREAK_SHRINK) col.shift();
+    }
+    for (const b of blocks) {
+      if (b.doneT !== null && now - b.doneT >= BLOCK_CLEAR) for (let d = 0; d < 3; d++) tower[b.col + d].shift();
+    }
+    blocks = blocks.filter((b) => b.doneT === null || now - b.doneT < BLOCK_CLEAR);
+    computeRows();
+    for (const it of towerItems()) {
+      const bottom = it.kind === 'block' ? it.row === 0 : tower[it.c][0] === it;
+      it.dim += ((bottom ? 0 : TOWER_DIM) - it.dim) * (1 - Math.exp(-dt * 12));
+      const ty = stoneY(it.row);
+      if (it.y < ty) {
+        it.vy += 7000 * dt;
+        it.y += it.vy * dt;
+        if (it.y >= ty) {
+          it.y = ty;
+          if (it.vy > 250) it.landT = now;
+          it.vy = 0;
+        }
+      } else {
+        it.y = ty;
+        it.vy = 0;
+      }
+    }
+  }
+
+  const towerEmpty = () => tower.every((c) => c.length === 0);
+
+  // Where a letter can go now: an open "?" in a word block resting on the bottom, else the leftmost
+  // matching bottom stone. Returns { block, k } / { stone } or null.
+  function findTarget(l) {
+    for (const b of blocks) {
+      if (!blockAtBottom(b)) continue;
+      const k = [...b.word].findIndex((ch, i) => ch === l.ch && !b.filled[i] && !b.reserved[i]);
+      if (k >= 0) return { block: b, k };
+    }
+    for (const col of tower) {
+      const s = col[0];
+      if (s && s.kind === 'stone' && !s.reserved && s.ch === l.ch) return { stone: s };
+    }
+    return null;
+  }
+
+  // "?" slots in one row along the bottom of the block face, under the icon.
+  function blockSlotLayout(n) {
+    const gap = 3, fh = BLOCK_FACE_H;
+    const size = Math.min(24, (BLOCK_W - 12 - (n - 1) * gap) / n);
+    const depth = Math.max(3, Math.round(size * 0.1));
+    const y = fh / 2 - 5 - (size + depth) / 2;
+    return { size, depth, pts: [...Array(n)].map((_, k) => ({ x: (k - (n - 1) / 2) * (size + gap), y })) };
+  }
+  // Face centre, placed so the block's top and bottom edges line up with the stones beside it.
+  // Face centre, placed so the block spans from the top of the upper stone row beside it to the
+  // bottom (thickness included) of the lower one.
+  const blockFace = (b) => ({ x: b.x, y: b.y + (STONE + STONE_DEPTH) / 2 - BLOCK_D - BLOCK_FACE_H / 2 });
+  function blockSlotPos(b, k) {
+    const L = blockSlotLayout(b.word.length), f = blockFace(b);
+    return { x: f.x + L.pts[k].x, y: f.y + L.pts[k].y, size: L.size };
+  }
+
+  // ---------- Audio ----------
+  let actx = null;
+  let muted = false;
+  try { muted = localStorage.getItem('letterpick-muted') === '1'; } catch (e) {}
+  function toggleMute() {
+    muted = !muted;
+    try { localStorage.setItem('letterpick-muted', muted ? '1' : '0'); } catch (e) {}
+  }
+  function ensureAudio() {
+    if (!actx) {
+      try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
+    }
+    if (actx.state === 'suspended') actx.resume();
+  }
+  function tone(freq, dur, type, vol, slideTo, attack = 0.008, delay = 0) {
+    if (!actx || muted) return;
+    const t = actx.currentTime + delay;
+    const o = actx.createOscillator();
+    const g = actx.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, t);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(actx.destination);
+    o.start(t);
+    o.stop(t + dur + 0.02);
+  }
+  const sfxTap = () => tone(220, 0.12, 'triangle', 0.12, 120);
+  const sfxPop = (i) => tone(520 * Math.pow(1.122, i), 0.11, 'sine', 0.09, 760 * Math.pow(1.122, i));
+  const sfxLand = (i) => tone(170 + i * 12, 0.07, 'triangle', 0.07, 110);
+  const sfxLocked = () => tone(240, 0.07, 'sine', 0.07, 180);
+  function noise(dur, vol, freq, type = 'highpass', q = 1, delay = 0) {
+    if (!actx || muted) return;
+    const t = actx.currentTime + delay;
+    const buf = actx.createBuffer(1, Math.ceil(actx.sampleRate * dur), actx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length) ** 3;
+    const src = actx.createBufferSource();
+    src.buffer = buf;
+    const f = actx.createBiquadFilter();
+    f.type = type;
+    f.frequency.value = freq;
+    f.Q.value = q;
+    const g = actx.createGain();
+    g.gain.value = vol;
+    src.connect(f).connect(g).connect(actx.destination);
+    src.start(t);
+  }
+  // Stone "clack": bandpassed noise snap + short inharmonic partials + a smaller rebound click.
+  const sfxMatch = () => {
+    noise(0.03, 0.23, 3000, 'bandpass', 1.4);
+    tone(2150, 0.07, 'sine', 0.033, 2050, 0.001);
+    tone(3370, 0.05, 'sine', 0.021, 3280, 0.001);
+    tone(4700, 0.035, 'sine', 0.013, null, 0.001);
+    tone(600, 0.06, 'triangle', 0.023, 440, 0.001);
+    noise(0.02, 0.11, 3900, 'bandpass', 1.8, 0.022);
+    tone(2400, 0.035, 'sine', 0.013, null, 0.001, 0.022);
+  };
+  const sfxWin = () => {
+    [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.35, 'triangle', 0.08, null, 0.01, i * 0.11));
+    tone(1568, 0.6, 'sine', 0.04, null, 0.02, 0.44);
+  };
+  const sfxReveal = () => {
+    tone(700, 0.1, 'sine', 0.06, 1050);
+    tone(1400, 0.12, 'sine', 0.035, null, 0.005, 0.09);
+  };
+  const sfxBlock = () => {
+    [659, 784, 988, 1319].forEach((f, i) => tone(f, 0.22, 'triangle', 0.07, null, 0.01, 0.08 + i * 0.07));
+  };
+  const sfxFail = () => {
+    tone(440, 0.22, 'triangle', 0.1, 400);
+    setTimeout(() => tone(370, 0.22, 'triangle', 0.1, 330), 180);
+    setTimeout(() => tone(294, 0.5, 'triangle', 0.1, 220), 360);
+  };
+
+  // ---------- Letters ----------
+  // States: wait → pop → air → (toStone | toSlot → slotted → toStone) → gone
+  function spawnWord(tile, now) {
+    // Send any word still hovering on its way so it doesn't overlap the new one.
+    for (const l of letters) {
+      if (l.state === 'wait') l.appearAt = now;
+      if (l.state === 'wait' || l.state === 'pop' || l.state === 'air') l.flyAt = Math.min(l.flyAt, now + l.i * 15);
+    }
+    const text = tile.word;
+    const n = text.length;
+    const startX = tile.x + tile.w / 2, startY = tile.y + tile.h / 2;
+    const flyBase = now + (n - 1) * STAGGER + POP + HOLD;
+    [...text].forEach((ch, i) => {
+      letters.push({
+        ch, i, n,
+        state: 'wait',
+        appearAt: now + i * STAGGER,
+        flyAt: flyBase + i * FLY_STAGGER,
+        sx: startX, sy: startY,
+        ax: rowX(n, TS * AIR_SCALE, GAP * AIR_SCALE, i), ay: AIR_Y,
+        x: startX, y: startY, scale: 0, rot: (Math.random() - 0.5) * 0.9, elev: 0, alpha: 1,
+        t0: 0, fx: 0, fy: 0, fs: 1, landT: -1e9,
+        slot: -1, target: null,
+      });
+    });
+  }
+
+  function startFlight(l, now, state) {
+    l.state = state;
+    l.t0 = now;
+    l.fx = l.x; l.fy = l.y; l.fs = l.scale;
+  }
+
+  function aim(l, t, now) {
+    if (t.block) t.block.reserved[t.k] = true;
+    else t.stone.reserved = true;
+    l.target = t;
+    startFlight(l, now, 'toStone');
+  }
+
+  // Returns false if the letter has nowhere to go yet (no matching bottom, no free slot).
+  function depart(l, now) {
+    const t = findTarget(l);
+    if (t) { aim(l, t, now); return true; }
+    const k = slots.indexOf(null);
+    if (k < 0) return false;
+    slots[k] = l;
+    l.slot = k;
+    startFlight(l, now, 'toSlot');
+    return true;
+  }
+
+  function flight(l, now, tx, ty, ts) {
+    const p = clamp01((now - l.t0) / FLY);
+    const e = easeInOutCubic(p);
+    l.x = lerp(l.fx, tx, e);
+    l.y = lerp(l.fy, ty, e) - Math.sin(Math.PI * p) * 30;
+    l.scale = lerp(l.fs, ts, e);
+    l.elev = AIR_ELEV * Math.sin(Math.PI * p) + (l.fs > 1 ? AIR_ELEV * (1 - e) : 0);
+    l.rot = Math.sin(Math.PI * p) * 0.12 * (l.i % 2 ? 1 : -1);
+    return p >= 1;
+  }
+
+  function collide(l, s, now) {
+    l.state = 'gone';
+    s.breakT = now;
+    sfxMatch();
+    glows.push({ x: s.x, y: s.y, t0: now });
+    rings.push({ x: s.x, y: s.y, t0: now, r: 46 });
+    sparkle(s.x, s.y);
+  }
+
+  function fillBlock(l, b, k, now) {
+    l.state = 'gone';
+    b.filled[k] = true;
+    b.fillT[k] = now;
+    sfxMatch();
+    const p = blockSlotPos(b, k);
+    sparkle(p.x, p.y);
+    if (!b.filled.every(Boolean)) return;
+    b.doneT = now;
+    sfxBlock();
+    const f = blockFace(b);
+    glows.push({ x: f.x, y: f.y, t0: now });
+    rings.push({ x: f.x, y: f.y, t0: now, r: 80 });
+    burst(f.x, f.y);
+  }
+
+  function updateLetters(now, dt) {
+    for (const l of letters) {
+      if (l.state === 'wait' && now >= l.appearAt) {
+        l.state = 'pop';
+        l.t0 = now;
+        sfxPop(l.i);
+      }
+      if (l.state === 'pop') {
+        const p = clamp01((now - l.t0) / POP);
+        const e = easeOutBack(p);
+        l.x = lerp(l.sx, l.ax, e);
+        l.y = lerp(l.sy, l.ay, e);
+        l.scale = lerp(0.2, AIR_SCALE, e);
+        l.rot = lerp(l.rot, 0, 0.18);
+        l.elev = AIR_ELEV * clamp01(p * 1.5);
+        if (p >= 1) { l.state = 'air'; l.rot = 0; }
+        else if (now >= l.flyAt) depart(l, now);
+      }
+      if (l.state === 'air') {
+        l.x = l.ax;
+        l.y = l.ay + Math.sin(now * 0.008 + l.i * 0.7) * 2.2;
+        l.scale = AIR_SCALE;
+        if (now >= l.flyAt) depart(l, now);
+      }
+      if (l.state === 'slotted') {
+        const k = 1 - Math.exp(-dt * 16);
+        l.x += (slotX(l.slot) - l.x) * k;
+        l.y += (slotY(l.slot) - l.y) * k;
+      }
+      if (l.state === 'toSlot' && flight(l, now, slotX(l.slot), slotY(l.slot), SLOT / TS)) {
+        l.state = 'slotted';
+        l.landT = now;
+        l.x = slotX(l.slot); l.y = slotY(l.slot); l.scale = SLOT / TS; l.rot = 0; l.elev = 0;
+        sfxLand(l.i);
+        dust(l.x, l.y + SLOT / 2);
+      }
+      if (l.state === 'toStone') {
+        const t = l.target;
+        if (t.block) {
+          const p = blockSlotPos(t.block, t.k);
+          if (flight(l, now, p.x, p.y, p.size / TS)) fillBlock(l, t.block, t.k, now);
+        } else if (flight(l, now, t.stone.x, t.stone.y, STONE / TS)) collide(l, t.stone, now);
+      }
+    }
+    letters = letters.filter((l) => l.state !== 'gone');
+  }
+
+  // Plays out the letters that haven't left the air yet against the current tower and slots,
+  // and reports whether the game would end up stuck once they all settle.
+  function pendingWouldFail() {
+    const model = new Map();
+    const cols = tower.map((col) => col.flatMap((it) => {
+      if (it.kind === 'stone') return it.reserved || it.breakT !== null ? [] : [it.ch];
+      if (!model.has(it)) {
+        const need = [...it.word].filter((_, k) => !it.filled[k] && !it.reserved[k]);
+        model.set(it, need.length ? { kind: 'block', col: it.col, need } : null);
+      }
+      return model.get(it) ? [model.get(it)] : [];
+    }));
+    const slotted = letters.filter((l) => l.state === 'slotted' || l.state === 'toSlot').map((l) => l.ch);
+    const waiting = letters
+      .filter((l) => l.state === 'wait' || l.state === 'pop' || l.state === 'air')
+      .sort((a, b) => a.flyAt - b.flyAt)
+      .map((l) => l.ch);
+    return settle(cols, slotted, waiting);
+  }
+
+  // Whenever the tower's bottom row changes, slotted letters with a partner fly up to it.
+  function resolveSlots(now) {
+    for (let k = 0; k < SLOT_COUNT; k++) {
+      const l = slots[k];
+      if (!l || l.state !== 'slotted') continue;
+      const t = findTarget(l);
+      if (!t) continue;
+      slots[k] = null;
+      l.slot = -1;
+      aim(l, t, now);
+    }
+  }
+
+  // Once every letter has settled and no new word is sent for a moment, close the gaps in the tray.
+  let settledAt = null;
+  function compactSlots(now) {
+    const held = slots.filter(Boolean);
+    const gappy = held.some((l, i) => l.slot !== i);
+    if (gameState !== 'play' || !gappy || letters.some((l) => l.state !== 'slotted')) { settledAt = null; return; }
+    if (settledAt === null) settledAt = now;
+    if (now - settledAt < 250) return;
+    slots = Array(SLOT_COUNT).fill(null);
+    held.forEach((l, i) => { slots[i] = l; l.slot = i; });
+    settledAt = null;
+  }
+
+  // ---------- Particles ----------
+  const BURST_COLORS = ['#ffd66b', '#ff8fa3', '#7ee0ff', '#b8f28c', '#ffffff'];
+  function burst(x, y) {
+    for (let i = 0; i < 14; i++) {
+      const a = Math.random() * Math.PI * 2, s = 90 + Math.random() * 200;
+      particles.push({
+        x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 80,
+        life: 0, max: 0.45 + Math.random() * 0.3,
+        size: 2.5 + Math.random() * 3.5,
+        color: BURST_COLORS[(Math.random() * BURST_COLORS.length) | 0],
+        g: 520,
+      });
+    }
+  }
+  function sparkle(x, y) {
+    const n = 12;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.4, s = 140 + Math.random() * 110;
+      particles.push({
+        x: x + Math.cos(a) * 8, y: y + Math.sin(a) * 8,
+        vx: Math.cos(a) * s, vy: Math.sin(a) * s - 20,
+        life: 0, max: 0.55 + Math.random() * 0.25,
+        size: 2 + Math.random() * 2,
+        color: Math.random() < 0.6 ? '#fff6d6' : '#ffd66b',
+        g: -30, drag: 0.9, soft: true,
+      });
+    }
+    for (let i = 0; i < 4; i++) {
+      const a = Math.random() * Math.PI * 2, s = 50 + Math.random() * 50;
+      particles.push({
+        x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 30,
+        life: 0, max: 0.7 + Math.random() * 0.2,
+        size: 4 + Math.random() * 2,
+        color: '#fff6d6',
+        g: -20, drag: 0.92, star: true, soft: true,
+        rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 4,
+      });
+    }
+  }
+  function dust(x, y) {
+    for (let i = 0; i < 4; i++) {
+      const dir = i < 2 ? -1 : 1;
+      particles.push({
+        x: x + dir * (8 + Math.random() * 8), y,
+        vx: dir * (30 + Math.random() * 50), vy: -20 - Math.random() * 30,
+        life: 0, max: 0.35, size: 2 + Math.random() * 2,
+        color: 'rgba(255,240,210,0.9)', g: 60,
+      });
+    }
+  }
+  function updateParticles(dt) {
+    particles = stepParticles(particles, dt);
+    confetti = stepParticles(confetti, dt);
+  }
+  function stepParticles(list, dt) {
+    for (const p of list) {
+      p.life += dt;
+      p.vy += p.g * dt;
+      if (p.drag) {
+        const d = Math.pow(p.drag, dt * 60);
+        p.vx *= d;
+        p.vy *= d;
+      } else {
+        p.vx *= 0.985;
+      }
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      if (p.star || p.vr) p.rot += p.vr * dt;
+    }
+    return list.filter((p) => p.life < p.max);
+  }
+
+  // ---------- Input ----------
+  function toLocal(e) {
+    const r = canvas.getBoundingClientRect();
+    return { x: (e.clientX - r.left) * (W / r.width), y: (e.clientY - r.top) * (H / r.height) };
+  }
+  // Hit-test against the front slot, not the animated position, so rapid taps always register.
+  function tileAt(p) {
+    const y0 = rowTop(FRONT_ROW);
+    if (p.y < y0 || p.y > y0 + TILE) return undefined;
+    return tiles.find((t) => t.row === FRONT_ROW && p.x >= t.x && p.x <= t.x + t.w);
+  }
+  canvas.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    ensureAudio();
+    const p = toLocal(e);
+    const now = performance.now();
+    if (Math.hypot(p.x - SOUND_BTN.x, p.y - SOUND_BTN.y) <= SOUND_BTN.r + 6) {
+      toggleMute();
+      sfxTap();
+      return;
+    }
+    if (gameState === 'howto' || gameState === 'intro') {
+      if (now - howtoT <= 400) return;
+      sfxTap();
+      if (gameState === 'intro' && introQueue.length) {
+        introKind = introQueue.shift();
+        howtoT = now;
+      } else gameState = 'play';
+      return;
+    }
+    for (const [b, dir] of [[PREV_BTN, -1], [NEXT_BTN, 1]]) {
+      if (Math.hypot(p.x - b.x, p.y - b.y) > b.r + 8) continue;
+      const to = levelIdx + dir;
+      if (to < 0 || to >= LEVELS.length) { sfxLocked(); return; }
+      sfxTap();
+      loadLevel(to, now);
+      return;
+    }
+    if (gameState === 'fail' || gameState === 'win') {
+      const b = RETRY_BTN;
+      if (now - failT > 500 && p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) {
+        sfxTap();
+        if (gameState === 'win' && hasNextLevel()) loadLevel(levelIdx + 1, now);
+        else restart(now);
+      }
+      return;
+    }
+    if (Math.hypot(p.x - HELP_BTN.x, p.y - HELP_BTN.y) <= HELP_BTN.r + 6) {
+      sfxTap();
+      gameState = 'howto';
+      howtoT = now;
+      return;
+    }
+    const t = tileAt(p);
+    if (!t) {
+      const locked = tiles.find((o) => o.row !== FRONT_ROW && p.x >= o.x && p.x <= o.x + o.w && p.y >= o.y && p.y <= o.y + o.h);
+      if (locked) {
+        locked.denyT = now;
+        sfxLocked();
+      }
+      return;
+    }
+    if (pendingWouldFail()) {
+      t.denyT = now;
+      sfxLocked();
+      return;
+    }
+    t.y = rowTop(FRONT_ROW);
+    sfxTap();
+    burst(t.x + t.w / 2, t.y + t.h / 2);
+    spawnWord(t, now);
+    consumeTile(t, now);
+  });
+  canvas.addEventListener('pointermove', (e) => { pointer = toLocal(e); });
+  canvas.addEventListener('pointerleave', () => { pointer = { x: -1, y: -1 }; });
+
+  // ---------- Drawing ----------
+  function rrectOn(c, x, y, w, h, r) {
+    c.beginPath();
+    c.moveTo(x + r, y);
+    c.arcTo(x + w, y, x + w, y + h, r);
+    c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r);
+    c.arcTo(x, y, x + w, y, r);
+    c.closePath();
+  }
+  const rrect = (x, y, w, h, r) => rrectOn(ctx, x, y, w, h, r);
+
+  // Wooden board with a darker edge underneath for thickness; shared by the slot tray and word blocks.
+  function woodPanel(c, x, y, w, h, r, depth, rim) {
+    c.save();
+    c.shadowColor = 'rgba(0,0,0,0.5)';
+    c.shadowBlur = 12;
+    c.shadowOffsetY = 4;
+    c.fillStyle = '#4a2c12';
+    rrectOn(c, x, y + depth, w, h, r);
+    c.fill();
+    c.restore();
+    const g = c.createLinearGradient(0, y, 0, y + h);
+    g.addColorStop(0, '#b67c44');
+    g.addColorStop(1, '#8f5c2e');
+    c.fillStyle = g;
+    rrectOn(c, x, y, w, h, r);
+    c.fill();
+    c.strokeStyle = '#5e3a1a';
+    c.lineWidth = rim;
+    rrectOn(c, x + rim / 2, y + rim / 2, w - rim, h - rim, r - rim / 2);
+    c.stroke();
+  }
+
+  // Recessed hole sized for a stone of `size`, shifted down by half the stone's thickness so the
+  // stone sits flush inside it.
+  function slotHole(c, x, y, size, r) {
+    const d = Math.max(3, Math.round(size * 0.1));
+    c.fillStyle = 'rgba(0,0,0,0.25)';
+    rrectOn(c, x - size / 2, y - size / 2 + d / 2, size, size, r);
+    c.fill();
+    c.strokeStyle = 'rgba(255,255,255,0.08)';
+    c.lineWidth = 1;
+    c.stroke();
+  }
+
+  // Returns the Y of the face centre (shifts down when pressed).
+  function tileBody(w, h, r, depth, press, elev, c) {
+    ctx.save();
+    ctx.shadowColor = `rgba(0,0,0,${0.35 + elev * 0.012})`;
+    ctx.shadowBlur = 6 + elev * 1.4;
+    ctx.shadowOffsetY = 3 + elev;
+    ctx.fillStyle = c.depth;
+    rrect(-w / 2, -h / 2 + depth, w, h, r);
+    ctx.fill();
+    ctx.restore();
+
+    const fy = -h / 2 + depth * press;
+    const g = ctx.createLinearGradient(0, fy, 0, fy + h);
+    g.addColorStop(0, c.top);
+    g.addColorStop(1, c.bottom);
+    ctx.fillStyle = g;
+    rrect(-w / 2, fy, w, h, r);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 1.5;
+    rrect(-w / 2 + 1.5, fy + 1.5, w - 3, h - 3, r - 1.5);
+    ctx.stroke();
+    return fy + h / 2;
+  }
+
+  function drawStone(x, y, size, ch, c, scale = 1, rot = 0, elev = 0, flash = 0, alpha = 1, sqz = 0, dim = 0) {
+    if (scale <= 0.01 || alpha <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    ctx.scale(scale * (1 + sqz), scale * (1 - sqz));
+    const depth = Math.max(3, Math.round(size * 0.1));
+    const r = size * 0.22;
+    const faceCy = tileBody(size, size - depth, r, depth, 0, elev, c);
+    ctx.font = `700 ${size * 0.6}px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.fillText(ch, 0, faceCy + 2);
+    ctx.fillStyle = c.text;
+    ctx.fillText(ch, 0, faceCy + 1);
+    if (dim > 0.005) {
+      ctx.fillStyle = `rgba(20,14,40,${dim})`;
+      rrect(-size / 2, faceCy - (size - depth) / 2, size, size, r);
+      ctx.fill();
+    }
+    if (flash > 0) {
+      ctx.fillStyle = `rgba(255,255,240,${flash})`;
+      rrect(-size / 2, faceCy - (size - depth) / 2, size, size - depth, r);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  const ICON_COLORS = { top: '#fffaf0', bottom: '#f1e2c8', depth: '#c9a77a' };
+  const ICON_COLORS_HOVER = { top: '#ffffff', bottom: '#f7ead4', depth: '#c9a77a' };
+  const HIDDEN_COLORS = { top: '#7c6cab', bottom: '#5b4d8a', depth: '#3c3266' };
+
+  let bgCache = null;
+  function buildBackground() {
+    const c = document.createElement('canvas');
+    const dpr = canvas.width / W;
+    c.width = canvas.width; c.height = canvas.height;
+    const b = c.getContext('2d');
+    b.scale(dpr, dpr);
+
+    const g = b.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#1e2f5c');
+    g.addColorStop(0.5, '#15214a');
+    g.addColorStop(1, '#0c1430');
+    b.fillStyle = g;
+    b.fillRect(0, 0, W, H);
+
+    for (let i = 0; i < 40; i++) {
+      b.fillStyle = `rgba(255,255,255,${0.02 + Math.random() * 0.05})`;
+      b.beginPath();
+      b.arc(Math.random() * W, Math.random() * H, Math.random() * 1.6 + 0.4, 0, Math.PI * 2);
+      b.fill();
+    }
+
+    const v = b.createRadialGradient(W / 2, H / 2, H * 0.2, W / 2, H / 2, H * 0.75);
+    v.addColorStop(0, 'rgba(0,0,0,0)');
+    v.addColorStop(1, 'rgba(0,0,0,0.45)');
+    b.fillStyle = v;
+    b.fillRect(0, 0, W, H);
+
+    // Tower column guides
+    const rows = Math.min(TOWER_VISIBLE_ROWS, TOWER_ROWS);
+    const towerTop = Math.max(50, stoneY(rows - 1) - STONE / 2);
+    for (let col = 0; col < TCOLS; col++) {
+      b.fillStyle = 'rgba(255,255,255,0.04)';
+      rrectOn(b, colX(col) - STONE / 2 - 2, towerTop, STONE + 4, TOWER_BOTTOM + STONE / 2 - towerTop + 2, 10);
+      b.fill();
+    }
+
+    // Tower base plank
+    const baseY = TOWER_BOTTOM + STONE / 2 + 4;
+    const bw = TOWER_W + 28, bx = W / 2 - bw / 2;
+    b.save();
+    b.shadowColor = 'rgba(0,0,0,0.45)';
+    b.shadowBlur = 8;
+    b.shadowOffsetY = 4;
+    b.fillStyle = '#6e4420';
+    rrectOn(b, bx, baseY, bw, 12, 4);
+    b.fill();
+    b.restore();
+    const pg = b.createLinearGradient(0, baseY, 0, baseY + 7);
+    pg.addColorStop(0, '#d9a066');
+    pg.addColorStop(1, '#b07840');
+    b.fillStyle = pg;
+    rrectOn(b, bx, baseY, bw, 7, 3.5);
+    b.fill();
+    b.fillStyle = 'rgba(255,255,255,0.25)';
+    b.fillRect(bx + 3, baseY + 0.5, bw - 6, 1);
+
+    // Slot tray
+    const tx = SLOTS_X0 - 9, ty = SLOT_Y - SLOT / 2 - 9, tw = SLOTS_W + 18, th = SLOTS_H + 22;
+    woodPanel(b, tx, ty, tw, th, 14, 7, 4);
+    for (let i = 0; i < SLOT_COUNT; i++) slotHole(b, slotX(i), slotY(i), SLOT, 9);
+    bgCache = c;
+  }
+  window.addEventListener('resize', () => { bgCache = null; });
+  if (document.fonts) document.fonts.ready.then(() => { bgCache = null; });
+
+  function drawNavButton(b, dir, enabled) {
+    ctx.save();
+    ctx.globalAlpha = enabled ? 1 : 0.3;
+    ctx.fillStyle = 'rgba(255,255,255,0.14)';
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#e8fff6';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(b.x - 3 * dir, b.y - 6);
+    ctx.lineTo(b.x + 3 * dir, b.y);
+    ctx.lineTo(b.x - 3 * dir, b.y + 6);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawTopBar() {
+    ctx.save();
+    ctx.font = `700 22px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(LEVEL.name, W / 2, TITLE_Y + 1);
+    ctx.restore();
+    drawNavButton(PREV_BTN, -1, levelIdx > 0);
+    drawNavButton(NEXT_BTN, 1, hasNextLevel());
+    drawHelpButton();
+    drawSoundButton();
+  }
+
+  function drawHUD(now) {
+    if (tilesLeft === TOTAL_TILES && gameState === 'play' && letters.length === 0) {
+      ctx.save();
+      ctx.globalAlpha = 0.55 + 0.25 * Math.sin(now * 0.004);
+      ctx.font = `500 18px ${FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#e8fff6';
+      ctx.fillText('Tap a tile', W / 2, AIR_Y);
+      ctx.restore();
+    }
+  }
+
+  function breakAnim(breakT, now) {
+    const ce = now - breakT;
+    if (ce < BREAK_HOLD) {
+      const s = Math.sin((ce / BREAK_HOLD) * Math.PI);
+      return { scale: 1.15 + 0.08 * s, rot: 0, flash: 0.35 + 0.25 * s };
+    }
+    const p = clamp01((ce - BREAK_HOLD) / BREAK_SHRINK);
+    const ip = p * p * (2.2 * p - 1.2); // ease-in-back
+    return { scale: 1.15 * (1 - ip), rot: 0.6 * p * p, flash: 0.35 + 0.45 * p };
+  }
+
+  function drawBlock(b, now) {
+    let scale = 1, flash = 0;
+    if (b.doneT !== null) {
+      const ce = now - b.doneT;
+      if (ce < BLOCK_HOLD) {
+        const s = Math.sin((ce / BLOCK_HOLD) * Math.PI);
+        scale = 1 + 0.06 * s;
+        flash = 0.3 * s;
+      } else {
+        const p = clamp01((ce - BLOCK_HOLD) / (BLOCK_CLEAR - BLOCK_HOLD));
+        scale = 1 - p * p * (2.2 * p - 1.2);
+        flash = 0.2 + 0.5 * p;
+      }
+    }
+    const lt = (now - b.landT) / 1000;
+    const sqz = lt < 0.4 ? 0.06 * Math.exp(-lt * 9) * Math.cos(lt * 30) : 0;
+    const f = blockFace(b), fh = BLOCK_FACE_H;
+    ctx.save();
+    ctx.translate(f.x, f.y);
+    ctx.scale(scale * (1 + sqz), scale * (1 - sqz));
+    tileBody(BLOCK_W, fh, 14, BLOCK_D, 0, 0, ICON_COLORS);
+
+    ctx.font = `32px ${EMOJI_FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(b.icon, 0, -fh / 2 + 23);
+
+    const L = blockSlotLayout(b.word.length);
+    L.pts.forEach((p, k) => {
+      if (b.filled[k]) {
+        const pop = lerp(1.3, 1, easeOutBack(clamp01((now - b.fillT[k]) / 220)));
+        drawStone(p.x, p.y, L.size, b.word[k], STONE_COLORS, pop);
+        return;
+      }
+      // Same footprint as a placed stone: its face plus the thickness below it.
+      ctx.fillStyle = 'rgba(122,85,48,0.16)';
+      rrect(p.x - L.size / 2, p.y - (L.size - L.depth) / 2, L.size, L.size, L.size * 0.22);
+      ctx.fill();
+      ctx.font = `700 ${L.size * 0.6}px ${FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = 'rgba(122,85,48,0.5)';
+      ctx.fillText('?', p.x, p.y + 1);
+    });
+
+    if (b.dim > 0.005) {
+      ctx.fillStyle = `rgba(20,14,40,${b.dim})`;
+      rrect(-BLOCK_W / 2, -fh / 2, BLOCK_W, fh + BLOCK_D, 14);
+      ctx.fill();
+    }
+    if (flash > 0) {
+      ctx.fillStyle = `rgba(255,255,240,${flash})`;
+      rrect(-BLOCK_W / 2, -fh / 2, BLOCK_W, fh, 14);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawTower(now) {
+    for (const b of blocks) drawBlock(b, now);
+    for (const col of tower) {
+      for (const s of col) {
+        if (s.kind !== 'stone') continue;
+        if (s.breakT !== null) {
+          const b = breakAnim(s.breakT, now);
+          drawStone(s.x, s.y, STONE, s.ch, STONE_COLORS, b.scale, b.rot, 0, b.flash);
+          continue;
+        }
+        const lt = (now - s.landT) / 1000;
+        const sqz = lt < 0.4 ? 0.12 * Math.exp(-lt * 9) * Math.cos(lt * 30) : 0;
+        drawStone(s.x, s.y, STONE, s.ch, STONE_COLORS, 1, 0, 0, 0, 1, sqz, s.dim);
+      }
+    }
+  }
+
+  // The tower is drawn opaque into its own layer, then faded out towards the title bar as a whole,
+  // so the top rows look like the rest instead of showing their stacked parts through each other.
+  let towerLayer = null;
+  function drawTowerFaded(now) {
+    if (!towerLayer || towerLayer.width !== canvas.width || towerLayer.height !== canvas.height) {
+      towerLayer = document.createElement('canvas');
+      towerLayer.width = canvas.width;
+      towerLayer.height = canvas.height;
+    }
+    const tc = towerLayer.getContext('2d');
+    tc.setTransform(1, 0, 0, 1, 0, 0);
+    tc.clearRect(0, 0, towerLayer.width, towerLayer.height);
+    tc.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
+    const main = ctx;
+    ctx = tc;
+    drawTower(now);
+    ctx = main;
+    const g = tc.createLinearGradient(0, TOWER_FADE_Y0, 0, TOWER_FADE_Y1);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, 'rgba(0,0,0,1)');
+    tc.globalCompositeOperation = 'destination-in';
+    tc.fillStyle = g;
+    tc.fillRect(0, 0, W, H);
+    tc.globalCompositeOperation = 'source-over';
+    ctx.drawImage(towerLayer, 0, 0, W, H);
+  }
+
+  function drawLetter(l, now) {
+    if (l.state === 'wait') return;
+    const lt = (now - l.landT) / 1000;
+    const sqz = lt < 0.4 ? 0.2 * Math.exp(-lt * 9) * Math.cos(lt * 30) : 0;
+    drawStone(l.x, l.y, TS, l.ch, STONE_COLORS, l.scale, l.rot, l.elev, 0, l.alpha, sqz);
+  }
+
+  function drawIconTile(t, scale, alpha, dim, hover, flash, rot = 0, flipX = 1, hiddenFace = false) {
+    const fh = t.h - ICON_DEPTH, r = Math.min(18, t.w * 0.21);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(t.x + t.w / 2, t.y + t.h / 2 - hover * 3);
+    ctx.rotate(rot);
+    ctx.scale(scale * flipX, scale);
+    const colors = hiddenFace ? HIDDEN_COLORS : hover > 0.5 ? ICON_COLORS_HOVER : ICON_COLORS;
+    const faceCy = tileBody(t.w, fh, r, ICON_DEPTH, 0, hover * 3, colors);
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    if (hiddenFace) {
+      ctx.save();
+      ctx.font = `700 ${Math.round(t.w * 0.48)}px ${FONT}`;
+      ctx.shadowColor = 'rgba(205,185,255,0.85)';
+      ctx.shadowBlur = 7 + 4 * Math.sin(performance.now() * 0.004);
+      ctx.fillStyle = '#efe7ff';
+      ctx.fillText('?', 0, faceCy + 2);
+      ctx.restore();
+    } else {
+      ctx.font = `${t.w * 0.51}px ${EMOJI_FONT}`;
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.18)';
+      ctx.shadowBlur = 4;
+      ctx.shadowOffsetY = 2;
+      ctx.fillText(t.icon, 0, faceCy + 3);
+      ctx.restore();
+
+      const pad = t.w * 0.09;
+      ctx.font = `700 ${Math.max(12, Math.round(t.w * 0.17))}px ${FONT}`;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = 'rgba(122,85,48,0.4)';
+      ctx.fillText(String(t.word.length), t.w / 2 - pad, faceCy + fh / 2 - pad * 0.8);
+    }
+
+    if (dim > 0) {
+      ctx.fillStyle = `rgba(12,20,48,${dim})`;
+      rrect(-t.w / 2, faceCy - fh / 2, t.w, fh + ICON_DEPTH, r);
+      ctx.fill();
+    }
+    if (flash > 0) {
+      ctx.fillStyle = `rgba(255,236,170,${flash})`;
+      rrect(-t.w / 2, faceCy - fh / 2, t.w, fh, r);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawIconTiles(now, dt) {
+    const hovered = tileAt(pointer);
+    for (const t of tiles) {
+      if (now < t.spawnT) continue;
+      const target = t === hovered ? 1 : 0;
+      t.hover += (target - t.hover) * (1 - Math.exp(-dt * 18));
+
+      const sp = clamp01((now - t.spawnT) / 220);
+      const scale = lerp(0.4, 1, easeOutBack(sp));
+      const rowF = (t.y - GRID_TOP) / (TILE + GRID_GAP);
+      const dim = clamp01(Math.abs(rowF - FRONT_ROW) / (BACK_ROW - FRONT_ROW)) * 0.45;
+
+      const wt = (now - t.denyT) / 320;
+      const rot = wt < 1 ? Math.sin(wt * Math.PI * 4) * (1 - wt) * 0.07 : 0;
+      const rv = revealView(t, now);
+      drawIconTile(t, scale, clamp01(sp * 2), dim, t.hover, 0, rot, rv.sx, rv.hidden);
+    }
+
+    for (const v of vanishing) {
+      const p = clamp01((now - v.vanishT) / 220);
+      const scale = p < 0.3 ? lerp(1, 1.12, p / 0.3) : lerp(1.12, 0, easeInOutCubic((p - 0.3) / 0.7));
+      drawIconTile(v, scale, 1 - p * p, 0, 0, (1 - p) * 0.7);
+    }
+    vanishing = vanishing.filter((v) => now - v.vanishT < 220);
+  }
+
+  function drawRings(now) {
+    for (const r of rings) {
+      const p = (now - r.t0) / 400;
+      if (p < 0 || p >= 1) continue;
+      ctx.save();
+      ctx.globalAlpha = (1 - p) ** 2 * 0.7;
+      ctx.strokeStyle = '#fff1cc';
+      ctx.lineWidth = 2.5 * (1 - p) + 0.5;
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, 14 + r.r * (1 - (1 - p) ** 3), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    rings = rings.filter((r) => now - r.t0 < 400);
+  }
+
+  function drawParticles() {
+    for (const p of particles) {
+      const a = 1 - p.life / p.max;
+      ctx.globalAlpha = p.soft ? a * a : a;
+      ctx.globalCompositeOperation = p.soft ? 'lighter' : 'source-over';
+      ctx.fillStyle = p.color;
+      const r = p.size * (0.5 + a * 0.5);
+      ctx.beginPath();
+      if (p.star) {
+        for (let k = 0; k < 8; k++) {
+          const ang = p.rot + (k * Math.PI) / 4;
+          const rr = k % 2 ? r * 0.38 : r;
+          ctx.lineTo(p.x + Math.cos(ang) * rr, p.y + Math.sin(ang) * rr);
+        }
+        ctx.closePath();
+      } else {
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      }
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  function drawGlows(now) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const g of glows) {
+      const p = (now - g.t0) / 420;
+      if (p >= 1) continue;
+      const a = Math.sin(Math.min(1, p * 4) * Math.PI / 2) * (1 - p) ** 1.5;
+      const rad = 26 + 34 * (1 - (1 - p) ** 2);
+      const grad = ctx.createRadialGradient(g.x, g.y, 0, g.x, g.y, rad);
+      grad.addColorStop(0, `rgba(255,240,200,${0.55 * a})`);
+      grad.addColorStop(0.5, `rgba(255,200,110,${0.22 * a})`);
+      grad.addColorStop(1, 'rgba(255,200,110,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(g.x, g.y, rad, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    glows = glows.filter((g) => now - g.t0 < 420);
+  }
+
+  // ---------- Fail / Win ----------
+  let gameState = 'howto';
+  let failT = 0, failCandidateT = null, winCandidateT = null;
+  const RETRY_BTN = { x: W / 2 - 90, y: H / 2 + 8, w: 180, h: 58 };
+  const PREV_BTN = { x: W / 2 - 88, y: TITLE_Y, r: 16 };
+  const NEXT_BTN = { x: W / 2 + 88, y: TITLE_Y, r: 16 };
+  const hasNextLevel = () => levelIdx < LEVELS.length - 1;
+
+  // Each new mechanic gets a one-time intro popup the first time a level using it is opened.
+  const introSeen = new Set();
+  let introQueue = [], introKind = null;
+  function loadLevel(idx, now) {
+    applyLevel(idx);
+    bgCache = null;
+    restart(now);
+    const features = [];
+    if (LEVEL.blocks && LEVEL.blocks.length) features.push('blocks');
+    if (LEVEL.hidden && LEVEL.hidden.length) features.push('hidden');
+    introQueue = features.filter((k) => !introSeen.has(k));
+    for (const k of introQueue) introSeen.add(k);
+    if (introQueue.length) {
+      introKind = introQueue.shift();
+      gameState = 'intro';
+      howtoT = now;
+    }
+  }
+
+  const slotsFilled = () => slots.filter(Boolean).length;
+
+  // Every slot holds a landed letter that has no partner, and nothing in flight can change that.
+  function slotsStuck() {
+    if (!slots.every((l) => l && l.state === 'slotted')) return false;
+    if (letters.some((l) => l.state === 'toStone')) return false;
+    if (blocks.some((b) => b.doneT !== null || b.vy > 0)) return false;
+    return !tower.some((col) => col.some((s) => s.kind === 'stone' && (s.breakT !== null || s.vy > 0)));
+  }
+
+  function checkFail(now) {
+    if (gameState !== 'play') return;
+    if (!slotsStuck()) { failCandidateT = null; return; }
+    if (failCandidateT === null) failCandidateT = now;
+    if (now - failCandidateT > 350) {
+      gameState = 'fail';
+      failT = now;
+      sfxFail();
+    }
+  }
+
+  function checkWin(now) {
+    if (gameState !== 'play') return;
+    if (!towerEmpty()) { winCandidateT = null; return; }
+    if (winCandidateT === null) winCandidateT = now;
+    if (now - winCandidateT > 450) {
+      gameState = 'win';
+      failT = now;
+      sfxWin();
+      for (let i = 0; i < 90; i++) {
+        confetti.push({
+          x: Math.random() * W, y: -20 - Math.random() * 200,
+          vx: (Math.random() - 0.5) * 80, vy: 80 + Math.random() * 120,
+          life: 0, max: 2.6 + Math.random() * 1.2,
+          size: 3 + Math.random() * 3,
+          color: BURST_COLORS[(Math.random() * BURST_COLORS.length) | 0],
+          g: 60, drag: 0.995, star: Math.random() < 0.35,
+          rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 6,
+        });
+      }
+    }
+  }
+
+  function restart(now) {
+    letters = [];
+    slots = Array(SLOT_COUNT).fill(null);
+    particles = [];
+    rings = [];
+    glows = [];
+    confetti = [];
+    failCandidateT = null;
+    winCandidateT = null;
+    gameState = 'play';
+    initTower();
+    initTiles(now);
+  }
+
+  function drawFail(now) {
+    const win = gameState === 'win';
+    const t = (now - failT) / 1000;
+    const a = clamp01(t / 0.3);
+    ctx.save();
+    ctx.fillStyle = `rgba(5,10,25,${0.65 * a})`;
+    ctx.fillRect(0, 0, W, H);
+
+    const p = clamp01((t - 0.1) / 0.45);
+    if (p > 0) {
+      const s = easeOutBack(p);
+      ctx.translate(W / 2, H / 2);
+      ctx.scale(s, s);
+      ctx.translate(-W / 2, -H / 2);
+
+      const pw = 300, ph = 250, px = W / 2 - pw / 2, py = H / 2 - 150;
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.5)';
+      ctx.shadowBlur = 30;
+      ctx.shadowOffsetY = 10;
+      ctx.fillStyle = win ? '#3a9a6a' : '#c94f5f';
+      rrect(px, py + 8, pw, ph, 26);
+      ctx.fill();
+      ctx.restore();
+      const g = ctx.createLinearGradient(0, py, 0, py + ph);
+      g.addColorStop(0, '#fff7ea');
+      g.addColorStop(1, '#f3e1c4');
+      ctx.fillStyle = g;
+      rrect(px, py, pw, ph, 26);
+      ctx.fill();
+
+      ctx.fillStyle = win ? '#4cc38a' : '#ff6b7f';
+      rrect(px + 30, py - 22, pw - 60, 48, 24);
+      ctx.fill();
+      ctx.font = `700 24px ${FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(win ? 'LEVEL COMPLETE' : 'LEVEL FAILED', W / 2, py + 2);
+
+      ctx.font = `48px ${EMOJI_FONT}`;
+      ctx.fillText(win ? '🎉' : '😵', W / 2, py + 70);
+
+      ctx.font = `500 18px ${FONT}`;
+      ctx.fillStyle = '#7a5530';
+      ctx.fillText(win ? 'Tower cleared!' : 'All slots are full!', W / 2, py + 122);
+
+      const b = RETRY_BTN;
+      const pulse = 1 + 0.04 * Math.sin(now * 0.006);
+      ctx.save();
+      ctx.translate(b.x + b.w / 2, b.y + b.h / 2);
+      ctx.scale(pulse, pulse);
+      const fc = tileBody(b.w, b.h - 6, 20, 6, 0, 0, { top: '#8fe36b', bottom: '#5cc24a', depth: '#3a8a2e' });
+      ctx.font = `700 22px ${FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(win ? (hasNextLevel() ? 'NEXT LEVEL' : 'PLAY AGAIN') : 'TRY AGAIN', 0, fc + 1);
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  let danger = 0;
+  function drawDanger(now, dt) {
+    const target = gameState === 'play' && slotsFilled() >= SLOT_COUNT - 1 ? 1 : 0;
+    danger += (target - danger) * (1 - Math.exp(-dt * 6));
+    if (danger < 0.01) return;
+    const pulse = 0.55 + 0.45 * Math.sin(now * 0.008);
+    const a = danger * (0.25 + 0.4 * pulse);
+    const g = ctx.createRadialGradient(W / 2, H / 2, H * 0.32, W / 2, H / 2, H * 0.62);
+    g.addColorStop(0, 'rgba(255,40,60,0)');
+    g.addColorStop(0.7, `rgba(255,40,60,${a * 0.45})`);
+    g.addColorStop(1, `rgba(255,30,50,${a})`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  function drawConfetti() {
+    for (const p of confetti) {
+      const a = clamp01((p.max - p.life) / 0.6);
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.fillStyle = p.color;
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      if (p.star) {
+        ctx.beginPath();
+        for (let k = 0; k < 10; k++) {
+          const ang = (k * Math.PI) / 5, rr = k % 2 ? p.size * 0.45 : p.size * 1.2;
+          ctx.lineTo(Math.cos(ang) * rr, Math.sin(ang) * rr);
+        }
+        ctx.closePath();
+        ctx.fill();
+      } else {
+        ctx.fillRect(-p.size, -p.size * 0.5, p.size * 2, p.size);
+      }
+      ctx.restore();
+    }
+  }
+
+  // ---------- How to play ----------
+  const HOWTO_BTN = { x: W / 2 - 90, y: 566, w: 180, h: 54 };
+  const HELP_BTN = { x: W - 34, y: TITLE_Y, r: 15 };
+  const SOUND_BTN = { x: 34, y: TITLE_Y, r: 15 };
+
+  function drawSoundButton() {
+    const { x, y, r } = SOUND_BTN;
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = ctx.strokeStyle = '#e8fff6';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x - 8, y - 3);
+    ctx.lineTo(x - 5, y - 3);
+    ctx.lineTo(x - 1, y - 7);
+    ctx.lineTo(x - 1, y + 7);
+    ctx.lineTo(x - 5, y + 3);
+    ctx.lineTo(x - 8, y + 3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    if (muted) {
+      ctx.moveTo(x + 3, y - 4); ctx.lineTo(x + 9, y + 4);
+      ctx.moveTo(x + 9, y - 4); ctx.lineTo(x + 3, y + 4);
+    } else {
+      ctx.arc(x + 1, y, 4, -Math.PI / 4, Math.PI / 4);
+      ctx.moveTo(x + 1 + 8 * Math.cos(-Math.PI / 4), y + 8 * Math.sin(-Math.PI / 4));
+      ctx.arc(x + 1, y, 8, -Math.PI / 4, Math.PI / 4);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+  let howtoT = performance.now();
+
+  function drawHelpButton() {
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.beginPath();
+    ctx.arc(HELP_BTN.x, HELP_BTN.y, HELP_BTN.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.font = `700 17px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#e8fff6';
+    ctx.fillText('?', HELP_BTN.x, HELP_BTN.y + 1);
+    ctx.restore();
+  }
+
+  function wrapText(text, x, y, maxW, lh) {
+    const lines = [];
+    let line = '';
+    for (const w of text.split(' ')) {
+      const t = line ? line + ' ' + w : w;
+      if (line && ctx.measureText(t).width > maxW) { lines.push(line); line = w; } else line = t;
+    }
+    lines.push(line);
+    lines.forEach((l, i) => ctx.fillText(l, x, y + i * lh));
+  }
+
+  function miniIcon(icon, x, y, size) {
+    ctx.save();
+    ctx.translate(x, y);
+    const fc = tileBody(size, size - 5, 12, 5, 0, 0, ICON_COLORS);
+    ctx.font = `${size * 0.55}px ${EMOJI_FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(icon, 0, fc + 2);
+    ctx.restore();
+  }
+
+  const miniStone = (ch, x, y, size, alpha = 1, scale = 1) =>
+    drawStone(x, y, size, ch, STONE_COLORS, scale, 0, 0, 0, alpha);
+
+  const HOWTO_STEPS = [
+    {
+      text: 'Öndeki bir kareye dokun. Kelimenin harfleri açılır.',
+      draw(cx, cy, now) {
+        miniIcon('🚲', cx - 92, cy, 56);
+        ctx.font = `28px ${EMOJI_FONT}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('👆', cx - 76, cy + 24 + Math.sin(now * 0.008) * 4);
+        ctx.font = `700 22px ${FONT}`;
+        ctx.fillStyle = '#c9a77a';
+        ctx.fillText('→', cx - 43, cy);
+        [...'BIKE'].forEach((ch, i) => miniStone(ch, cx - 6 + i * 30, cy, 27));
+      },
+    },
+    {
+      text: 'Her harf, kulenin en altındaki aynı harfle çarpışıp yok olur. Kuleyi tamamen temizle!',
+      draw(cx, cy, now) {
+        const ph = (now % 2400) / 2400;
+        const S = 26, tx = cx + 30, by = cy - 2;
+        if (ph < 0.4) {
+          const e = easeInOutCubic(ph / 0.4);
+          miniStone('O', tx, by - 30, S);
+          miniStone('L', tx, by, S);
+          miniStone('L', lerp(cx - 50, tx, e), lerp(cy + 24, by, e) - Math.sin(Math.PI * e) * 14, S);
+        } else if (ph < 0.6) {
+          const b = (ph - 0.4) / 0.2;
+          miniStone('O', tx, by - 30, S);
+          miniStone('L', tx, by, S, 1, 1.15 * (1 - b * b));
+          ctx.save();
+          ctx.globalAlpha = 1 - b;
+          ctx.font = `${22 + 14 * b}px ${EMOJI_FONT}`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('✨', tx, by);
+          ctx.restore();
+        } else {
+          const d = clamp01((ph - 0.6) / 0.15);
+          miniStone('O', tx, by - 30 + 30 * d * d, S);
+        }
+      },
+    },
+    {
+      text: 'Eşi yoksa harf slota girer, eşi en alta inince kendiliğinden çarpışır. Slotlar dolarsa kaybedersin!',
+      draw(cx, cy, now) {
+        const S = 26, G = 5, n = 7;
+        const x0 = cx - (n * S + (n - 1) * G) / 2 + S / 2;
+        for (let i = 0; i < n; i++) {
+          ctx.fillStyle = 'rgba(122,85,48,0.18)';
+          rrect(x0 + i * (S + G) - S / 2, cy - S / 2, S, S, 6);
+          ctx.fill();
+        }
+        ['C', 'O', 'T', 'B'].forEach((ch, i) => miniStone(ch, x0 + i * (S + G), cy, S - 2));
+        const ph = (now % 1600) / 1600;
+        const e = easeOutBack(clamp01(ph / 0.35));
+        miniStone('K', x0 + 4 * (S + G), lerp(cy - 34, cy, e), S - 2, clamp01(ph * 6));
+      },
+    },
+  ];
+
+  function drawHowTo(now) {
+    const t = (now - howtoT) / 1000;
+    ctx.save();
+    ctx.fillStyle = `rgba(5,10,25,${0.7 * clamp01(t / 0.25)})`;
+    ctx.fillRect(0, 0, W, H);
+    const p = clamp01((t - 0.05) / 0.4);
+    if (p > 0) {
+      const s = easeOutBack(p);
+      ctx.translate(W / 2, H / 2);
+      ctx.scale(s, s);
+      ctx.translate(-W / 2, -H / 2);
+
+      const pw = 345, ph = 570, px = W / 2 - pw / 2, py = 72;
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.5)';
+      ctx.shadowBlur = 30;
+      ctx.shadowOffsetY = 10;
+      ctx.fillStyle = '#2a7a63';
+      rrect(px, py + 8, pw, ph, 26);
+      ctx.fill();
+      ctx.restore();
+      const g = ctx.createLinearGradient(0, py, 0, py + ph);
+      g.addColorStop(0, '#fff7ea');
+      g.addColorStop(1, '#f3e1c4');
+      ctx.fillStyle = g;
+      rrect(px, py, pw, ph, 26);
+      ctx.fill();
+
+      ctx.fillStyle = '#3aa383';
+      rrect(px + 40, py - 22, pw - 80, 48, 24);
+      ctx.fill();
+      ctx.font = `700 24px ${FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText('NASIL OYNANIR', W / 2, py + 2);
+
+      HOWTO_STEPS.forEach((st, k) => {
+        const y0 = py + 50 + k * 150;
+        ctx.fillStyle = '#3aa383';
+        ctx.beginPath();
+        ctx.arc(px + 26, y0 + 12, 13, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.font = `700 15px ${FONT}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(String(k + 1), px + 26, y0 + 13);
+
+        st.draw(W / 2, y0 + 40, now);
+
+        ctx.font = `500 15px ${FONT}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#7a5530';
+        wrapText(st.text, W / 2, y0 + 88, pw - 50, 19);
+      });
+
+      const b = HOWTO_BTN;
+      const pulse = 1 + 0.04 * Math.sin(now * 0.006);
+      ctx.save();
+      ctx.translate(b.x + b.w / 2, b.y + b.h / 2);
+      ctx.scale(pulse, pulse);
+      const fc = tileBody(b.w, b.h - 6, 20, 6, 0, 0, { top: '#8fe36b', bottom: '#5cc24a', depth: '#3a8a2e' });
+      ctx.font = `700 22px ${FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText('OYNA', 0, fc + 1);
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  const INTROS = {
+    blocks: {
+      title: 'YENİ: KELİME BLOĞU',
+      text: 'Kulede artık kelime blokları var. Blok en alta inince kelimenin harfleri doğrudan ? kutularına yerleşir. Kelimeyi tamamla, blok yok olsun!',
+      // Demo block whose "?" slots fill one by one, then empty and start over.
+      demo(cx, cy, now) {
+        const word = 'GOAT', cycle = (now % 2600) / 1000;
+        const fillT = [...word].map((_, k) => now - (cycle - 0.5 - k * 0.3) * 1000);
+        drawBlock({
+          word, icon: ICON_OF[word], x: cx, y: cy + 20, dim: 0, landT: -1e9, doneT: null,
+          filled: fillT.map((ft) => ft <= now), fillT,
+        }, now);
+      },
+    },
+    hidden: {
+      title: 'YENİ: GİZLİ KARELER',
+      text: 'Bazı karelerin ne olduğu gizli: ikonları ve harf sayıları görünmez. Gizli kare en öne geldiğinde açılır.',
+      // Demo tile that flips from "?" to its icon and back.
+      demo(cx, cy, now) {
+        const c = (now % 2400) / 2400;
+        let sx = 1, hid = c < 0.4;
+        if (c >= 0.4 && c < 0.55) { const q = (c - 0.4) / 0.15; sx = Math.abs(Math.cos(q * Math.PI)); hid = q < 0.5; }
+        else if (c >= 0.85) { const q = (c - 0.85) / 0.15; sx = Math.abs(Math.cos(q * Math.PI)); hid = q >= 0.5; }
+        const s = 76;
+        drawIconTile({ x: cx - s / 2, y: cy - s / 2, w: s, h: s, word: 'OWL', icon: ICON_OF.OWL }, 1, 1, 0, 0, 0, 0, Math.max(0.02, sx), hid);
+      },
+    },
+  };
+
+  function drawIntro(now) {
+    const intro = INTROS[introKind];
+    const t = (now - howtoT) / 1000;
+    ctx.save();
+    ctx.fillStyle = `rgba(5,10,25,${0.7 * clamp01(t / 0.25)})`;
+    ctx.fillRect(0, 0, W, H);
+    const p = clamp01((t - 0.05) / 0.4);
+    if (p > 0) {
+      const s = easeOutBack(p);
+      ctx.translate(W / 2, H / 2);
+      ctx.scale(s, s);
+      ctx.translate(-W / 2, -H / 2);
+
+      const pw = 320, ph = 360, px = W / 2 - pw / 2, py = H / 2 - 200;
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.5)';
+      ctx.shadowBlur = 30;
+      ctx.shadowOffsetY = 10;
+      ctx.fillStyle = '#2a7a63';
+      rrect(px, py + 8, pw, ph, 26);
+      ctx.fill();
+      ctx.restore();
+      const g = ctx.createLinearGradient(0, py, 0, py + ph);
+      g.addColorStop(0, '#fff7ea');
+      g.addColorStop(1, '#f3e1c4');
+      ctx.fillStyle = g;
+      rrect(px, py, pw, ph, 26);
+      ctx.fill();
+
+      ctx.fillStyle = '#3aa383';
+      rrect(px + 30, py - 22, pw - 60, 48, 24);
+      ctx.fill();
+      ctx.font = `700 22px ${FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(intro.title, W / 2, py + 2);
+
+      intro.demo(W / 2, py + 82, now);
+
+      ctx.font = `500 15px ${FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#7a5530';
+      wrapText(intro.text, W / 2, py + 170, pw - 50, 20);
+
+      const b = { x: W / 2 - 90, y: py + ph - 76, w: 180, h: 54 };
+      const pulse = 1 + 0.04 * Math.sin(now * 0.006);
+      ctx.save();
+      ctx.translate(b.x + b.w / 2, b.y + b.h / 2);
+      ctx.scale(pulse, pulse);
+      const fc = tileBody(b.w, b.h - 6, 20, 6, 0, 0, { top: '#8fe36b', bottom: '#5cc24a', depth: '#3a8a2e' });
+      ctx.font = `700 22px ${FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText('TAMAM', 0, fc + 1);
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  // ---------- Loop ----------
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+
+    updateTower(now, dt);
+    updateLetters(now, dt);
+    resolveSlots(now);
+    compactSlots(now);
+    updateParticles(dt);
+    updateTiles(dt);
+    checkFail(now);
+    checkWin(now);
+
+    if (!bgCache) buildBackground();
+    ctx.drawImage(bgCache, 0, 0, W, H);
+
+    drawTowerFaded(now);
+    for (const l of letters) if (l.state === 'slotted') drawLetter(l, now);
+    drawHUD(now);
+    drawIconTiles(now, dt);
+    for (const l of letters) if (l.state !== 'slotted') drawLetter(l, now);
+
+    drawGlows(now);
+    drawRings(now);
+    drawParticles();
+
+    drawDanger(now, dt);
+    if (gameState === 'fail' || gameState === 'win') drawFail(now);
+    drawTopBar();
+    if (gameState === 'howto') drawHowTo(now);
+    if (gameState === 'intro') drawIntro(now);
+    drawConfetti();
+
+    requestAnimationFrame(frame);
+  }
+
+  restart(performance.now());
+  gameState = 'howto';
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
